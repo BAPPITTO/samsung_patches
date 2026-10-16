@@ -1,0 +1,38 @@
+group = "app.samsung"
+
+patches {
+    about {
+        name = "Samsung Patches"
+        description = "Morphe patches to enable Samsung apps to work on other Android devices"
+        source = "git@github.com:rambo3721/samsung_patches.git"
+        author = "rambo3721"
+        contact = "na"
+        website = "na"
+        license = "GPLv3"
+    }
+}
+
+// Separate configuration so gson is available at runtime for the
+// generatePatchesList task but never bundled into the APK.
+val patchListGeneratorClasspath = configurations.create("patchListGeneratorClasspath")
+
+dependencies {
+    compileOnly(libs.gson)
+    patchListGeneratorClasspath(libs.gson)
+}
+
+tasks {
+    register<JavaExec>("generatePatchesList") {
+        description = "Build patch with patch list"
+
+        dependsOn(build)
+
+        classpath = sourceSets["main"].runtimeClasspath + patchListGeneratorClasspath
+        mainClass.set("util.PatchListGeneratorKt")
+    }
+
+    // Used by gradle-semantic-release-plugin.
+    publish {
+        dependsOn("generatePatchesList")
+    }
+}
