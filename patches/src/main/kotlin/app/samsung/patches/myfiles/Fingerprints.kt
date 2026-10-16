@@ -57,3 +57,44 @@ object KnoxSupportFingerprint : Fingerprint(
     returnType = "Z",
     parameters = emptyList()
 )
+
+/**
+ * Placeholder: Secure Folder visibility/availability check.
+ * My Files hides the "Secure Folder" storage entry when this returns false;
+ * on non-Samsung devices (and any device without a Knox container service)
+ * it always does. Patching it makes the Secure Folder entry appear in the
+ * main storage list again — actual encryption still depends on the ROM, but
+ * the UI no longer blocks it (see SamsungDeviceSpoof.kt).
+ * TODO: Verify class/method in the target APK (Jadx search: "SecureFolder",
+ * "secure folder", "Knox", "ContainerService").
+ */
+object SecureFolderCheckFingerprint : Fingerprint(
+    definingClass = "/SecureFolderUtils;",
+    name = "isSecureFolderAvailable",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
+    returnType = "Z",
+    parameters = emptyList(),
+    filters = listOf(
+        string("SecureFolder"),
+    )
+)
+
+/**
+ * Placeholder: OneDrive cloud-storage account check.
+ * In stock My Files the OneDrive source is gated behind a Samsung/Microsoft
+ * account pairing that only works on Galaxy devices, so the entry shows
+ * "not available" everywhere else. Flipping this check keeps the OneDrive
+ * storage source visible so the normal Microsoft sign-in flow can be used.
+ * TODO: Verify class/method in the target APK (Jadx search: "OneDrive",
+ * "live.com", "MicrosoftAccount", "only supported").
+ */
+object OneDriveCheckFingerprint : Fingerprint(
+    definingClass = ":com/samsung/android/filemanager/cloud/",
+    name = "isOneDriveSupported",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
+    returnType = "Z",
+    parameters = emptyList(),
+    filters = listOf(
+        string("OneDrive"),
+    )
+)

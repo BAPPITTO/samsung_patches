@@ -25,7 +25,7 @@ Click here to add these patches to Morphe: https://morphe.software/add-source?gi
 
 | App | Package name | Patches | Status |
 | --- | --- | --- | --- |
-| My Files (Samsung file manager) | `com.android.myfiles` | Samsung device spoof · Remove Samsung-only restrictions | 🚧 Scaffold — fingerprints unverified |
+| My Files (Samsung file manager) | `com.android.myfiles` | Samsung device spoof · Remove Samsung-only restrictions · Enable Secure Folder view · Enable OneDrive | 🚧 Scaffold — fingerprints unverified |
 
 ## ✅ Things to do (author: BAPPITTO)
 
@@ -59,8 +59,14 @@ the real dex until verified:
   [Morphe fingerprinting guide](https://github.com/MorpheApp/morphe-patcher/blob/main/docs/2_2_1_fingerprinting.md).
 - Keep each fingerprint as its own named `object` — if a fingerprint fails to match at runtime,
   the stack trace will name it, which makes debugging far easier.
-- If a feature turns out not to need patching (or can't be found), delete that fingerprint and
-  its patch rather than shipping dead code.
+- Pay special attention to these feature gates (each has its own fingerprint + patch):
+  - **Secure Folder** (`SecureFolderCheckFingerprint` / `KnoxSupportFingerprint`, patched by
+    "Enable Secure Folder view" in `SamsungDeviceSpoof.kt`) — Jadx search: `SecureFolder`,
+    `secure folder`, `Knox`, `KLMS`, `ContainerService`.
+  - **OneDrive** (`OneDriveCheckFingerprint`, patched by "Enable OneDrive") — Jadx search:
+    `OneDrive`, `live.com`, `MicrosoftAccount`, `only supported`.
+  - If a feature turns out not to need patching (or can't be found), delete that fingerprint and
+    its patch rather than shipping dead code.
 
 ### 4. Write the patch logic against the verified methods
 - With real fingerprints in place, review the corresponding `Patches.kt` mutations so they
