@@ -4,8 +4,8 @@ patches {
     about {
         name = "Samsung Patches"
         description = "Morphe patches to enable Samsung apps to work on other Android devices"
-        source = "git@github.com:rambo3721/samsung_patches.git"
-        author = "rambo3721"
+        source = "git@github.com:BAPPITTO/samsung_patches.git"
+        author = "BAPPITTO"
         contact = "na"
         website = "na"
         license = "GPLv3"
