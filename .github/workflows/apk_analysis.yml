@@ -1,0 +1,140 @@
+name: APK Analysis (decompile + fingerprint)
+
+# Automates the manual checklist in README.md ("Things to do"):
+#   1. Verify the package name of the downloaded APK (aapt dump badging).
+#   2. Decompile the APK with Jadx.
+#   3. Hunt for Samsung-gating code (samsung / galaxy / Build.BRAND / Knox /
+#      "only supported" / "not available" ...) and produce a fingerprint report
+#      with candidate methods for Fingerprints.kt.
+#
+# The full decompiled source and the JSON/text reports are uploaded as build
+# artifacts so you can compare them against the placeholder fingerprints without
+# running anything locally. This workflow never edits Fingerprints.kt itself —
+# matching real methods still requires human verification per the README.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: "Direct download URL of the stock My Files APK (APKMirror/UpToDown direct link, or any URL ending in .apk)"
+        required: true
+        type: string
+      apk_name:
+        description: "Local filename to save the APK as"
+        required: false
+        default: "myfiles.apk"
+        type: string
+      jadx_version:
+        description: "Jadx release version to use"
+        required: false
+        default: "1.5.1"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Decompile & fingerprint APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Download APK
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o "${{ inputs.apk_name }}" "${{ inputs.apk_url }}"
+          file "${{ inputs.apk_name }}"
+          # Basic sanity: must be a zip (APK) container
+          unzip -l "${{ inputs.apk_name }}" >/dev/null
+
+      # README step 1: don't assume the package name — verify it.
+      - name: Install aapt (Android build tools)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y aapt
+
+      - name: Verify package name (README step 1)
+        id: pkg
+        run: |
+          set -euo pipefail
+          BADGING=$(aapt dump badging "${{ inputs.apk_name }}" | head -5)
+          echo "$BADGING"
+          PKG=$(echo "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)
+          VER=$(echo "$BADGING" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
+          echo "package=$PKG" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          if [ "$PKG" = "com.android.myfiles" ]; then
+            echo "✅ Package name matches Constants.kt (com.android.myfiles)"
+          else
+            echo "::warning::Package name is '$PKG', NOT com.android.myfiles."
+            echo "::warning::Samsung ships variants under different package names."
+            echo "::warning::Update MY_FILES_COMPATIBILITY in shared/Constants.kt accordingly."
+          fi
+          if [ -n "$VER" ]; then
+            grep -q "\"$VER\"" patches/src/main/kotlin/app/samsung/patches/shared/Constants.kt \
+              && echo "✅ Version $VER is listed in Constants.kt targets" \
+              || echo "::warning::Version $VER is NOT listed in Constants.kt (MY_FILES_COMPATIBILITY)."
+          fi
+
+      # README step 3: decompile with Jadx.
+      - name: Install Jadx
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o jadx.zip \
+            "https://github.com/skylot/jadx/releases/download/v${{ inputs.jadx_version }}/jadx-${{ inputs.jadx_version }}.zip"
+          sudo unzip -q jadx.zip -d /opt/jadx
+          sudo chmod +x /opt/jadx/bin/jadx
+          jadx --version
+
+      - name: Decompile APK with Jadx
+        run: |
+          set -euo pipefail
+          /opt/jadx/bin/jadx --no-res --no-debug-info \
+            --show-bad-code \
+            -d jadx-src "${{ inputs.apk_name }}"
+          echo "Decompiled files: $(find jadx-src -type f | wc -l)"
+
+      - name: Fingerprint candidate search (README step 3)
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apk_fingerprint.py jadx-src --json fingerprint-report.json
+          python3 .github/scripts/apk_fingerprint.py "${{ inputs.apk_name }}" --json dex-strings-report.json
+
+      - name: Upload analysis artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-analysis-${{ steps.pkg.outputs.package }}-${{ steps.pkg.outputs.version }}
+          path: |
+            fingerprint-report.json
+            dex-strings-report.json
+            jadx-src/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Write job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## APK analysis summary"
+            echo ""
+            echo "- **Package:** \`${{ steps.pkg.outputs.package }}\` (expected \`com.android.myfiles\`)"
+            echo "- **Version:** \`${{ steps.pkg.outputs.version }}\` (check \`MY_FILES_COMPATIBILITY\` in Constants.kt)"
+            echo ""
+            echo "### Next steps (see README \"Things to do\")"
+            echo "1. Open the \`apk-analysis-*\` artifact → \`fingerprint-report.json\` for candidate gating methods."
+            echo "2. Verify each candidate in the decompiled sources (\`jadx-src/\`). "
+            echo "3. Rewrite the placeholder fingerprints in \`patches/src/main/kotlin/app/samsung/patches/myfiles/Fingerprints.kt\`"
+            echo "   with the real defining class, name, access flags, return type, parameters and string filters:"
+            echo "   \`DeviceBrandCheckFingerprint\`, \`KnoxSupportFingerprint\`, \`SecureFolderCheckFingerprint\` (Secure Folder), \`OneDriveCheckFingerprint\` (OneDrive)."
+            echo "4. Review the matching mutations in \`SamsungDeviceSpoof.kt\` (incl. \"Enable Secure Folder view\" / \"Enable OneDrive\") and \`RemoveSamsungRestrictions.kt\`."
+          } >> "$GITHUB_STEP_SUMMARY"
